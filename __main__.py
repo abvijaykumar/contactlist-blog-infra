@@ -132,13 +132,11 @@ pulumi.export('dynamodb label', contacts_dynamodb_table.stream_label)
 
 
 #Setup VPC endpoint to the dynmodb
-s3 = aws.ec2.VpcEndpoint("dynamodb",
+vpcep = aws.ec2.VpcEndpoint("dynamodb",
     vpc_id=myvpcid,
     service_name="com.amazonaws.us-east-1.dynamodb")
-
-
-
-
+pulumi.export('VPC Endpoint arn', vpcep.arn)
+pulumi.export('VPC Endpoint id', vpcep.id)
 
 # Search for the right AMI and create a EC2 instance
 linuxami = aws.ec2.get_ami(most_recent=True,
@@ -150,11 +148,13 @@ linuxami = aws.ec2.get_ami(most_recent=True,
 
 user_data = """
 #!/bin/bash
-
-curl -o- https://raw.githubusercontent.com/creationix/nvm/v0.32.1/install.sh | bash
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-nvm install 7
+sudo yum update && sudo yum -y install curl
+curl -sL https://rpm.nodesource.com/setup_16.x | sudo bash -
+sudo yum install -y nodejs
+sudo yum -y install gcc-c++ make
+curl -sL https://dl.yarnpkg.com/rpm/yarn.repo | sudo tee /etc/yum.repos.d/yarn.repo
+sudo yum -y install yarn
+node --version
 """
 
 myinstance = aws.ec2.Instance("ipulumi-blog-instance",
@@ -179,7 +179,7 @@ conn = provisioners.ConnectionArgs(
     private_key_passphrase=privateKeyPassPhrase,
 )
 
-
+"""
 # Copy a config file to our server.
 copy_cmd = provisioners.CopyFile('copy_cmd',
     conn=conn,
@@ -187,11 +187,10 @@ copy_cmd = provisioners.CopyFile('copy_cmd',
     dest='node-install.sh',
     opts=pulumi.ResourceOptions(depends_on=[myinstance]),
 )
-"""
+
 run_shell_cmd = provisioners.RemoteExec('run_shell_cmd',
     conn=conn,
     commands=['sh node-install.sh >log.txt'],
     opts=pulumi.ResourceOptions(depends_on=[copy_cmd]),
 )
-
 """
