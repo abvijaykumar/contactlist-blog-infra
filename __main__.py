@@ -4,6 +4,7 @@ import pulumi
 import pulumi_aws as aws
 import provisioners
 import base64
+import json
 
 config = pulumi.Config()
 
@@ -138,7 +139,26 @@ vpcep = aws.ec2.VpcEndpoint("dynamodb",
 pulumi.export('VPC Endpoint arn', vpcep.arn)
 pulumi.export('VPC Endpoint id', vpcep.id)
 
+
 # Search for the right AMI and create a EC2 instance
+#create IAM Role - We will need this when we go to the GitOps
+ec2_role = aws.iam.Role("pulumi-blog-ec2-role",
+    assume_role_policy=json.dumps({
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Effect": "Allow",
+                "Principal": {
+                "Service": "ec2.amazonaws.com"
+                },
+                "Action": "sts:AssumeRole"
+            }
+            ]
+    }),
+    tags={
+        "Name": "pulumi-blog-ec2-role",
+    })
+    
 linuxami = aws.ec2.get_ami(most_recent=True,
    filters=[aws.ec2.GetAmiFilterArgs(
         name='name',
@@ -155,12 +175,19 @@ sudo yum -y install gcc-c++ make
 curl -sL https://dl.yarnpkg.com/rpm/yarn.repo | sudo tee /etc/yum.repos.d/yarn.repo
 sudo yum -y install yarn
 node --version
+sudo yum install -y ruby
+sudo yum install wget
+wget https://aws-codedeploy-ap-south-1.s3.ap-south-1.amazonaws.com/latest/install
+chmod +x ./install
+sudo ./install auto
+sudo service codedeploy-agent start 
 """
-
-myinstance = aws.ec2.Instance("ipulumi-blog-instance",
+instance_profile = aws.iam.InstanceProfile("pulumi-blog-instance-profile", role=ec2_role.name)
+myinstance = aws.ec2.Instance("pulumi-blog-instance",
     ami=linuxami.id,
     instance_type="t2.micro",
     user_data=user_data,
+    iam_instance_profile=instance_profile,
     tags={
         "Name": "pulumi-blog-instance",
     },
@@ -179,6 +206,7 @@ conn = provisioners.ConnectionArgs(
     private_key_passphrase=privateKeyPassPhrase,
 )
 
+
 """
 # Copy a config file to our server.
 copy_cmd = provisioners.CopyFile('copy_cmd',
@@ -193,4 +221,82 @@ run_shell_cmd = provisioners.RemoteExec('run_shell_cmd',
     commands=['sh node-install.sh >log.txt'],
     opts=pulumi.ResourceOptions(depends_on=[copy_cmd]),
 )
+
+
+
+
+
+
 """
+
+"""
+
+Setup App GitOps
+
+
+
+
+
+#Code eEploy Policy
+codedeploy_role = aws.iam.Role("pulumi-blog-codedeploy-role",
+    assume_role_policy=json.dumps({
+        "Version": "2012-10-17",
+            "Statement": [
+            {
+                "Effect": "Allow",
+                "Principal": {
+                    "Service": "codedeploy.amazonaws.com"
+                },
+                "Action": "sts:AssumeRole"
+            }
+            ]
+    }),
+    tags={
+        "Name": "pulumi-blog-codedeploy-role",
+    })
+
+ec2_role_policy_attachment = aws.iam.RolePolicyAttachment("pulumi-blog-ec2-role-policy-attach",
+    role=ec2_role.id,
+    policy_arn="arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforAWSCodeDeploy"
+)
+
+codedeploy_role_policy_attachment1 = aws.iam.RolePolicyAttachment("pulumi-blog-codedeploy-role-policy-attach1",
+    role=codedeploy_role.id,
+    policy_arn="arn:aws:iam::aws:policy/AmazonEC2FullAccess"
+)
+codedeploy_role_policy_attachment2 = aws.iam.RolePolicyAttachment("pulumi-blog-codedeploy-role-policy-attach2",
+    role=codedeploy_role.id,
+    policy_arn="arn:aws:iam::aws:policy/AWSCodeDeployFullAccess"
+)
+codedeploy_role_policy_attachment3 = aws.iam.RolePolicyAttachment("pulumi-blog-codedeploy-role-policy-attach3",
+    role=codedeploy_role.id,
+    policy_arn="arn:aws:iam::aws:policy/AdministratorAccess"
+)
+codedeploy_role_policy_attachment4 = aws.iam.RolePolicyAttachment("pulumi-blog-codedeploy-role-policy-attach4",
+    role=codedeploy_role.id,
+    policy_arn="arn:aws:iam::aws:policy/service-role/AWSCodeDeployRole"
+)
+#Setup CodeDeploy Deploymnet group
+code_deploy_app = aws.codedeploy.Application("pulumi-blog-codedeploy-app", compute_platform="Server", 
+        tags={
+        "Name": "pulumi-blog-codedeploy-app",
+        }   )
+code_deploy_deploymnet_group = aws.codedeploy.DeploymentGroup("pulumi-blog-codedeploy-deploymentgroup",
+    deployment_group_name="pulumi-blog-codedeploy-deploymentgroup",
+    app_name=code_deploy_app.name, 
+    service_role_arn=codedeploy_role.arn,
+       ec2_tag_sets=[aws.codedeploy.DeploymentGroupEc2TagSetArgs(
+        ec2_tag_filters=[
+            aws.codedeploy.DeploymentGroupEc2TagSetEc2TagFilterArgs(
+                key="Name",
+                type="KEY_AND_VALUE",
+                value="pulumi-blog-instance",
+            ),
+        ],
+    )])
+
+"""
+
+
+
+
