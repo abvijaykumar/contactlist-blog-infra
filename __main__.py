@@ -92,10 +92,8 @@ mysecgroup = aws.ec2.SecurityGroup('pulumi-blog-secgrp',
         protocol="-1",
         cidr_blocks=["0.0.0.0/0"],
         ipv6_cidr_blocks=["::/0"],
-    )]
+    )])
     
-    
-    )
 # create the dynamodb
 contacts_dynamodb_table = aws.dynamodb.Table("contacts-table",
     attributes=[
@@ -158,7 +156,7 @@ ec2_role = aws.iam.Role("pulumi-blog-ec2-role",
     tags={
         "Name": "pulumi-blog-ec2-role",
     })
-    
+
 linuxami = aws.ec2.get_ami(most_recent=True,
    filters=[aws.ec2.GetAmiFilterArgs(
         name='name',
