@@ -78,6 +78,7 @@ mysecgroup = aws.ec2.SecurityGroup('pulumi-blog-secgrp',
         to_port=80,
         cidr_blocks=['0.0.0.0/0'],
     ),
+    
     aws.ec2.SecurityGroupIngressArgs(
         protocol='tcp',
         from_port=22,
@@ -157,6 +158,13 @@ ec2_role = aws.iam.Role("pulumi-blog-ec2-role",
         "Name": "pulumi-blog-ec2-role",
     })
 
+dynamodb_access_policy = aws.iam.RolePolicyAttachment("dynamodb_access_policy",
+    role=ec2_role.id,
+    policy_arn="arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess"
+)
+
+
+
 linuxami = aws.ec2.get_ami(most_recent=True,
    filters=[aws.ec2.GetAmiFilterArgs(
         name='name',
@@ -219,22 +227,10 @@ run_shell_cmd = provisioners.RemoteExec('run_shell_cmd',
     commands=['sh node-install.sh >log.txt'],
     opts=pulumi.ResourceOptions(depends_on=[copy_cmd]),
 )
-
-
-
-
-
-
 """
 
-"""
 
-Setup App GitOps
-
-
-
-
-
+#Setup App GitOps
 #Code eEploy Policy
 codedeploy_role = aws.iam.Role("pulumi-blog-codedeploy-role",
     assume_role_policy=json.dumps({
@@ -293,7 +289,7 @@ code_deploy_deploymnet_group = aws.codedeploy.DeploymentGroup("pulumi-blog-coded
         ],
     )])
 
-"""
+
 
 
 
