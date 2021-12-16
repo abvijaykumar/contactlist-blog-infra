@@ -74,17 +74,23 @@ mysecgroup = aws.ec2.SecurityGroup('pulumi-blog-secgrp',
     vpc_id=myvpcid,
     ingress=[aws.ec2.SecurityGroupIngressArgs(
         protocol='tcp',
-        from_port=80,
-        to_port=80,
+        from_port=8082,
+        to_port=8082,
         cidr_blocks=['0.0.0.0/0'],
     ),
-    
     aws.ec2.SecurityGroupIngressArgs(
         protocol='tcp',
         from_port=22,
         to_port=22,
         cidr_blocks=['0.0.0.0/0'],
-    )],
+    ), 
+    aws.ec2.SecurityGroupIngressArgs(
+        protocol='tcp',
+        from_port=8081,
+        to_port=8081,
+        cidr_blocks=['0.0.0.0/0'],
+    )
+    ],
     
     
     egress=[aws.ec2.SecurityGroupEgressArgs(
@@ -96,7 +102,7 @@ mysecgroup = aws.ec2.SecurityGroup('pulumi-blog-secgrp',
     )])
     
 # create the dynamodb
-contacts_dynamodb_table = aws.dynamodb.Table("contacts-table",
+contacts_dynamodb_table = aws.dynamodb.Table(resource_name="contacts-table",name="contacts-table",
     attributes=[
         aws.dynamodb.TableAttributeArgs(
             name="ContactName",
@@ -141,7 +147,7 @@ pulumi.export('VPC Endpoint id', vpcep.id)
 
 # Search for the right AMI and create a EC2 instance
 #create IAM Role - We will need this when we go to the GitOps
-ec2_role = aws.iam.Role("pulumi-blog-ec2-role",
+ec2_role = aws.iam.Role("pulumi-blog-ec2-role", name="pulumi-blog-ec2-role",
     assume_role_policy=json.dumps({
         "Version": "2012-10-17",
         "Statement": [
@@ -158,7 +164,36 @@ ec2_role = aws.iam.Role("pulumi-blog-ec2-role",
         "Name": "pulumi-blog-ec2-role",
     })
 
-dynamodb_access_policy = aws.iam.RolePolicyAttachment("dynamodb_access_policy",
+
+dynamodb_policy = aws.iam.Policy("dynamodb_access_policy_1",
+    description="Access DynamoDB from EC2",
+    policy={
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "DescribeQueryScanBooksTable",
+            "Effect": "Allow",
+            "Action": [
+                "dynamodb:BatchGet*",
+                "dynamodb:DescribeStream",
+                "dynamodb:DescribeTable",
+                "dynamodb:Get*",
+                "dynamodb:Query",
+                "dynamodb:Scan",
+                "dynamodb:BatchWrite*",
+                "dynamodb:CreateTable",
+                "dynamodb:Delete*",
+                "dynamodb:Update*",
+                "dynamodb:PutItem"            
+            ],
+            "Resource": contacts_dynamodb_table.arn
+    }]})
+
+dynamodb_policy_attach = aws.iam.RolePolicyAttachment("dynamodb_policy_attach ",
+    role=ec2_role.id,
+    policy_arn=dynamodb_policy.arn)
+
+dynamodb_access_policy = aws.iam.RolePolicyAttachment("dynamodb_access_policy_2",
     role=ec2_role.id,
     policy_arn="arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess"
 )
@@ -188,7 +223,7 @@ chmod +x ./install
 sudo ./install auto
 sudo service codedeploy-agent start 
 """
-instance_profile = aws.iam.InstanceProfile("pulumi-blog-instance-profile", role=ec2_role.name)
+instance_profile = aws.iam.InstanceProfile("pulumi-blog-instance-profile", name="pulumi-blog-ec2-role", role=ec2_role.name)
 myinstance = aws.ec2.Instance("pulumi-blog-instance",
     ami=linuxami.id,
     instance_type="t2.micro",
@@ -199,7 +234,8 @@ myinstance = aws.ec2.Instance("pulumi-blog-instance",
     },
     vpc_security_group_ids=[mysecgroup.id],
     subnet_id=subnet.id,
-    key_name=keyName,
+    key_name=keyName
+    #metadata_options=instance_metadata_options
     )
 
 pulumi.export('public_ip', myinstance.public_ip)
@@ -271,10 +307,12 @@ codedeploy_role_policy_attachment4 = aws.iam.RolePolicyAttachment("pulumi-blog-c
     policy_arn="arn:aws:iam::aws:policy/service-role/AWSCodeDeployRole"
 )
 #Setup CodeDeploy Deploymnet group
-code_deploy_app = aws.codedeploy.Application("pulumi-blog-codedeploy-app", compute_platform="Server", 
+code_deploy_app = aws.codedeploy.Application("pulumi-blog-codedeploy-app", 
+        name="pulumi-blog-codedeploy-app",
+        compute_platform="Server", 
         tags={
         "Name": "pulumi-blog-codedeploy-app",
-        }   )
+        })
 code_deploy_deploymnet_group = aws.codedeploy.DeploymentGroup("pulumi-blog-codedeploy-deploymentgroup",
     deployment_group_name="pulumi-blog-codedeploy-deploymentgroup",
     app_name=code_deploy_app.name, 
@@ -290,7 +328,14 @@ code_deploy_deploymnet_group = aws.codedeploy.DeploymentGroup("pulumi-blog-coded
     )])
 
 
+# storing the dynamodb table name on SSM
+pulumi_blog_ssm = aws.ssm.get_parameter(name="pulumi-blog-ssm-dynamodb-name")
+foo = aws.ssm.Parameter(resource_name=pulumi_blog_ssm.name, arn = pulumi_blog_ssm.arn,
+    overwrite=True,
+    type="String",
+    value=contacts_dynamodb_table.id)
 
 
-
-
+pulumi.export('SSM arn', pulumi_blog_ssm.arn)
+pulumi.export('SSM name', pulumi_blog_ssm.name)
+pulumi.export('SSM value', pulumi_blog_ssm.value)
